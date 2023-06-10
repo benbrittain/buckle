@@ -3,8 +3,8 @@
 Buckle is a launcher for buck2. It manages what version of buck2 is used on a per-project basis. It picks a good version of buck2, downloads it from the official releases or builds it from source, and then passes command line arguments through to the managed buck2 binary.
 
 TODO:
-Allow bootstrap from source (pinned)
-Warn on prelude mismatch
+1. Allow bootstrap from source (pinned)
+2. Warn on prelude mismatch
 
 ## Installation
 
