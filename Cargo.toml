@@ -2,6 +2,9 @@
 name = "buckle"
 version = "0.1.0"
 edition = "2021"
+description = "A lightweight launcher for buck2"
+license = "MIT"
+authors = ["Benjamin Brittain <ben@brittain.org>"]
 
 [dependencies]
 anyhow = "1.0.71"
