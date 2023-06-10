@@ -6,7 +6,15 @@ It also provides an option to manage updating the standard prelude to ensure buc
 
 ## Installation
 
-TODO
+At this time, only installing through crates.io is supported.
+
+Packaging for various distros and/or releases on GitHub are highly likely.
+
+```
+cargo install buckle
+```
+
+
 
 ## What buck2 version does buckle use?
 
