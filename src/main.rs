@@ -105,7 +105,7 @@ fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
         .send()?;
     let text = releases.text_with_charset("utf-8")?;
     let mut file = File::create(releases_json_path)?;
-    file.write(text.as_bytes())?;
+    file.write_all(text.as_bytes())?;
     file.flush()?;
     Ok(serde_json::from_str(&text)?)
 }
@@ -145,7 +145,7 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
         return Ok(path);
     }
     if let Some(prefix) = path.parent() {
-        fs::create_dir_all(&prefix)?;
+        fs::create_dir_all(prefix)?;
     }
 
     let buck2_bin = File::create(&path)?;
@@ -184,7 +184,7 @@ fn get_buck2_path() -> Result<PathBuf, Error> {
     // or any version, but that isn't supported yet
     // TODO probably a regex here.
     if buck2_version == "latest" {
-        return Ok(download_http(buck2_version, &buck2_dir)?);
+        Ok(download_http(buck2_version, &buck2_dir)?)
     } else {
         // TODO fetch from git.
         todo!()
