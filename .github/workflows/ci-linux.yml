@@ -23,3 +23,5 @@ jobs:
         components: rustfmt, clippy
     - name: Build
       run: cargo build
+    - name: Lint
+      run: cargo clippy
