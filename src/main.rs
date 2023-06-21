@@ -17,7 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 
 const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download/";
 
-fn get_buck2_dir() -> Result<PathBuf, Error> {
+fn get_buckle_dir() -> Result<PathBuf, Error> {
     let mut dir = match env::var("BUCKLE_HOME") {
         Ok(home) => Ok(PathBuf::from(home)),
         Err(_) => match env::consts::OS {
@@ -174,7 +174,7 @@ fn read_buck2_version() -> Result<String, Error> {
 }
 
 fn get_buck2_path() -> Result<PathBuf, Error> {
-    let buck2_dir = get_buck2_dir()?;
+    let buck2_dir = get_buckle_dir()?;
     if !buck2_dir.exists() {
         fs::create_dir_all(&buck2_dir)?;
     }
