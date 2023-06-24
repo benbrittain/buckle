@@ -6,10 +6,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use std::{
-    io::Write,
-    time::SystemTime,
-};
+use std::{io::Write, time::SystemTime};
 use url::Url;
 
 #[cfg(unix)]
