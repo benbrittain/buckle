@@ -8,7 +8,7 @@ fn test_buck2_latest() {
     cmd.arg("--version");
     let assert = cmd.assert();
     let stderr = String::from_utf8(assert.get_output().stderr.to_vec()).unwrap();
-    assert!(stderr.contains("/buckle"), "found {}", stderr);
+    assert!(stderr.contains("/buckle/buck2/"), "found {}", stderr);
     let stdout = String::from_utf8(assert.get_output().stdout.to_vec()).unwrap();
     assert!(stdout.starts_with("buck2 "), "found {}", stdout);
     assert.success();

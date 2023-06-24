@@ -171,7 +171,8 @@ fn read_buck2_version() -> Result<String, Error> {
 }
 
 fn get_buck2_path() -> Result<PathBuf, Error> {
-    let buck2_dir = get_buckle_dir()?;
+    let buck2_dir = get_buckle_dir()?.join("buck2");
+
     if !buck2_dir.exists() {
         fs::create_dir_all(&buck2_dir)?;
     }
