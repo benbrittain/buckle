@@ -12,8 +12,6 @@ use url::Url;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download/";
-
 fn get_buckle_dir() -> Result<PathBuf, Error> {
     let mut dir = match env::var("BUCKLE_HOME") {
         Ok(home) => Ok(PathBuf::from(home)),
@@ -56,6 +54,13 @@ fn find_project_root() -> Result<Option<PathBuf>, Error> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct Asset {
+    pub name: String,
+    pub browser_download_url: Url,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct Release {
     pub url: Url,
     pub html_url: Url,
@@ -74,7 +79,7 @@ pub struct Release {
     pub created_at: Option<String>,
     pub published_at: Option<String>,
     pub author: serde_json::Value,
-    pub assets: Vec<serde_json::Value>,
+    pub assets: Vec<Asset>,
 }
 
 fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
@@ -128,15 +133,33 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     let releases = get_releases(output_dir)?;
     let mut path = output_dir.to_path_buf();
 
+    let mut artefact = None;
+    let arch = get_arch()?;
+
     for release in releases {
-        if release.tag_name == "latest" {
-            path.push(release.target_commitish);
-        } else {
-            return Err(anyhow!(
-                "Meta has changed their releasing method. Please update buckle."
-            ));
+        if release.name.as_ref() == Some(&version) {
+            if release.tag_name == "latest" {
+                path.push(release.target_commitish);
+            }
+            for asset in release.assets {
+                let name = asset.name;
+                let url = asset.browser_download_url;
+                if name == format!("buck2-{}.zst", arch) {
+                    artefact = Some((name, url));
+                    break;
+                }
+            }
         }
     }
+
+    let (_name, url) = if let Some((name, url)) = artefact {
+        (name, url)
+    } else {
+        return Err(anyhow!(
+            "Meta has changed their releasing method. Please update buckle."
+        ));
+    };
+
     path.push("buck2");
     if path.exists() {
         return Ok(path);
@@ -146,8 +169,7 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     }
 
     let buck2_bin = File::create(&path)?;
-    let arch = get_arch()?;
-    let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
+    let resp = reqwest::blocking::get(url)?;
     zstd::stream::copy_decode(resp, buck2_bin).unwrap();
     let permissions = fs::Permissions::from_mode(0o755);
     fs::set_permissions(&path, permissions)?;
