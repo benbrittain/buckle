@@ -116,14 +116,14 @@ fn get_arch() -> Result<&'static str, Error> {
     Ok(match env::consts::ARCH {
         "x86_64" => match env::consts::OS {
             "linux" => "x86_64-unknown-linux-gnu",
-            "darwin" => "x86_64-apple-darwin",
+            "darwin" | "macos" => "x86_64-apple-darwin",
             "windows" => "x86_64-pc-windows-msvc",
-            _ => return Err(anyhow!("Unsupported Arch/OS")),
+            unknown => return Err(anyhow!("Unsupported Arch/OS {}", unknown)),
         },
         "aarch64" => match env::consts::OS {
             "linux" => "aarch64-unknown-linux-gnu",
-            "darwin" => "aarch64-apple-darwin",
-            _ => return Err(anyhow!("Unsupported Arch/OS")),
+            "darwin" | "macos" => "aarch64-apple-darwin",
+            unknown => return Err(anyhow!("Unsupported Arch/OS {}", unknown)),
         },
         _ => return Err(anyhow!("Unsupported Architecture")),
     })
