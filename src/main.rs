@@ -1,17 +1,19 @@
 use anyhow::{anyhow, Error};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::{
     env,
     fs::{self, File},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use std::{io::Write, time::SystemTime};
 use tempfile::NamedTempFile;
 use url::Url;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::time::SystemTime;
 
 const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download";
 const BUCK_RELEASE_URL: &str = "https://github.com/facebook/buck2/tags";
@@ -100,6 +102,8 @@ fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
     let mut releases_json_path = path.to_path_buf();
     releases_json_path.push("releases.json");
 
+    // TODO support last last_modification_time for windows users
+    #[cfg(unix)]
     if releases_json_path.exists() {
         use std::os::unix::fs::MetadataExt;
         let meta = fs::metadata(&releases_json_path)?;
@@ -177,8 +181,11 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
     zstd::stream::copy_decode(resp, &tmp_buck2_bin).unwrap();
     tmp_buck2_bin.flush()?;
-    let permissions = fs::Permissions::from_mode(0o755);
-    fs::set_permissions(&tmp_buck2_bin, permissions)?;
+    #[cfg(unix)]
+    {
+        let permissions = fs::Permissions::from_mode(0o755);
+        fs::set_permissions(&tmp_buck2_bin, permissions)?;
+    }
     fs::rename(tmp_buck2_bin.path(), &buck2_path)?;
 
     // Also fetch the prelude hash and store it
