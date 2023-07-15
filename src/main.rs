@@ -7,15 +7,16 @@ use std::{
     process::{Command, Stdio},
 };
 use std::{io::Write, time::SystemTime};
+use tempfile::NamedTempFile;
 use url::Url;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download/";
+const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download";
 const BUCK_RELEASE_URL: &str = "https://github.com/facebook/buck2/tags";
 
-fn get_buck2_dir() -> Result<PathBuf, Error> {
+fn get_buckle_dir() -> Result<PathBuf, Error> {
     let mut dir = match env::var("BUCKLE_HOME") {
         Ok(home) => Ok(PathBuf::from(home)),
         Err(_) => match env::consts::OS {
@@ -50,9 +51,26 @@ fn get_buck2_dir() -> Result<PathBuf, Error> {
     Ok(dir)
 }
 
-/// Use the most recent .buckconfig except if a .buckroot is found.
+/// Find the furthest .buckconfig except if a .buckroot is found.
 fn find_project_root() -> Result<Option<PathBuf>, Error> {
-    Ok(None)
+    let path = env::current_dir()?;
+    let mut current_root = None;
+    for ancestor in path.ancestors() {
+        let mut br = ancestor.to_path_buf();
+        br.push(".buckroot");
+        if br.exists() {
+            // A buckroot means you should not check any higher in the file tree.
+            return Ok(Some(ancestor.to_path_buf()));
+        }
+
+        let mut bc = ancestor.to_path_buf();
+        bc.push(".buckconfig");
+        if bc.exists() {
+            // This is the highest buckconfig we know about
+            current_root = Some(ancestor.to_path_buf());
+        }
+    }
+    Ok(current_root)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,16 +130,16 @@ fn get_arch() -> Result<&'static str, Error> {
     Ok(match env::consts::ARCH {
         "x86_64" => match env::consts::OS {
             "linux" => "x86_64-unknown-linux-gnu",
-            "darwin" => "x86_64-apple-darwin",
+            "darwin" | "macos" => "x86_64-apple-darwin",
             "windows" => "x86_64-pc-windows-msvc",
-            _ => return Err(anyhow!("Unsupported Arch/OS")),
+            unknown => return Err(anyhow!("Unsupported Arch/OS: x86_64/{unknown}")),
         },
         "aarch64" => match env::consts::OS {
             "linux" => "aarch64-unknown-linux-gnu",
-            "darwin" => "aarch64-apple-darwin",
-            _ => return Err(anyhow!("Unsupported Arch/OS")),
+            "darwin" | "macos" => "aarch64-apple-darwin",
+            unknown => return Err(anyhow!("Unsupported Arch/OS: aarch64/{unknown}")),
         },
-        _ => return Err(anyhow!("Unsupported Architecture")),
+        arch => return Err(anyhow!("Unsupported Architecture: {arch}")),
     })
 }
 
@@ -153,12 +171,15 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     }
 
     // Fetch the buck2 archive, decode it, make it executable
-    let buck2_bin = File::create(&buck2_path)?;
+    let mut tmp_buck2_bin = NamedTempFile::new_in(dir_path.clone())?;
     let arch = get_arch()?;
+    eprintln!("buckle: fetching buck2-{version}");
     let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
-    zstd::stream::copy_decode(resp, buck2_bin).unwrap();
+    zstd::stream::copy_decode(resp, &tmp_buck2_bin).unwrap();
+    tmp_buck2_bin.flush()?;
     let permissions = fs::Permissions::from_mode(0o755);
-    fs::set_permissions(&buck2_path, permissions)?;
+    fs::set_permissions(&tmp_buck2_bin, permissions)?;
+    fs::rename(tmp_buck2_bin.path(), &buck2_path)?;
 
     // Also fetch the prelude hash and store it
     let mut prelude_path = dir_path.clone();
@@ -178,7 +199,7 @@ fn read_buck2_version() -> Result<String, Error> {
     if let Some(mut root) = find_project_root()? {
         root.push(".buckversion");
         if root.exists() {
-            return Ok(fs::read_to_string(root)?);
+            return Ok(fs::read_to_string(root)?.trim().to_string());
         }
     }
 
@@ -186,36 +207,61 @@ fn read_buck2_version() -> Result<String, Error> {
 }
 
 fn get_buck2_path() -> Result<PathBuf, Error> {
-    let buck2_dir = get_buck2_dir()?;
-    if !buck2_dir.exists() {
-        fs::create_dir_all(&buck2_dir)?;
+    let buckle_dir = get_buckle_dir()?;
+    if !buckle_dir.exists() {
+        fs::create_dir_all(&buckle_dir)?;
     }
 
     let buck2_version = read_buck2_version()?;
-    download_http(buck2_version, &buck2_dir)
+    download_http(buck2_version, &buckle_dir)
 }
 
 fn main() -> Result<(), Error> {
     let mut buck2_path = get_buck2_path()?;
-
     #[cfg(debug_assertions)]
     dbg!(&buck2_path);
-
     buck2_path.push("buck2");
+
+    if !buck2_path.exists() {
+        return Err(anyhow!(
+            "The buckle cache is corrupted. Suggested fix is to remove {}",
+            get_buckle_dir()?.display()
+        ));
+    }
+
+    // mode() is only available on unix systems
+    #[cfg(unix)]
+    if buck2_path.exists() {
+        let metadata = buck2_path.metadata()?;
+        let permissions = metadata.permissions();
+        let is_exec = metadata.is_file() && permissions.mode() & 0o111 != 0;
+        if !is_exec {
+            return Err(anyhow!(
+                "The buckle cache is corrupted. Suggested fix is to remove {}",
+                get_buckle_dir()?.display()
+            ));
+        }
+    }
+
     // Collect information indented for buck2 binary.
     let mut args = env::args_os();
     args.next(); // Skip buckle
     let envs = env::vars_os();
 
     // Pass all file descriptors through as well.
-    Command::new(buck2_path)
+    let status = Command::new(&buck2_path)
         .args(args)
         .envs(envs)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .output()
-        .expect("Failed to execute buck2.");
+        .unwrap_or_else(|_| panic!("Failed to execute {}", &buck2_path.display()))
+        .status;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
 
     Ok(())
 }
