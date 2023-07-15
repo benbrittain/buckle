@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "A lightweight launcher for buck2"
 license = "MIT"
+repository = "https://github.com/benbrittain/buckle"
 authors = ["Benjamin Brittain <ben@brittain.org>"]
 
 [dependencies]
