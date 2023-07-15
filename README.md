@@ -18,10 +18,8 @@ cargo install buckle
 
 ## .buckversion syntax
 
-TODO
+latest or date
 
-## What buck2 version does buckle use?
+TODO git sha
 
-TODO
-
-
+BUCKLE_PRELUDE_CHECK=NO

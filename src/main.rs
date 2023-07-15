@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Error};
+use ini::Ini;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::{
     env,
     fs::{self, File},
@@ -54,25 +56,29 @@ fn get_buckle_dir() -> Result<PathBuf, Error> {
 }
 
 /// Find the furthest .buckconfig except if a .buckroot is found.
-fn find_project_root() -> Result<Option<PathBuf>, Error> {
-    let path = env::current_dir()?;
-    let mut current_root = None;
-    for ancestor in path.ancestors() {
-        let mut br = ancestor.to_path_buf();
-        br.push(".buckroot");
-        if br.exists() {
-            // A buckroot means you should not check any higher in the file tree.
-            return Ok(Some(ancestor.to_path_buf()));
-        }
+fn get_buck2_project_root() -> &'static Path {
+    static INSTANCE: OnceCell<PathBuf> = OnceCell::new();
+    let path = INSTANCE.get_or_init(|| {
+        let path = env::current_dir().unwrap();
+        let mut current_root = None;
+        for ancestor in path.ancestors() {
+            let mut br = ancestor.to_path_buf();
+            br.push(".buckroot");
+            if br.exists() {
+                // A buckroot means you should not check any higher in the file tree.
+                return ancestor.to_path_buf();
+            }
 
-        let mut bc = ancestor.to_path_buf();
-        bc.push(".buckconfig");
-        if bc.exists() {
-            // This is the highest buckconfig we know about
-            current_root = Some(ancestor.to_path_buf());
+            let mut bc = ancestor.to_path_buf();
+            bc.push(".buckconfig");
+            if bc.exists() {
+                // This is the highest buckconfig we know about
+                current_root = Some(ancestor.to_path_buf());
+            }
         }
-    }
-    Ok(current_root)
+        current_root.expect("No .buckconfig present in directory hierarchy.")
+    });
+    path
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -177,7 +183,7 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     // Fetch the buck2 archive, decode it, make it executable
     let mut tmp_buck2_bin = NamedTempFile::new_in(dir_path.clone())?;
     let arch = get_arch()?;
-    eprintln!("buckle: fetching buck2-{version}");
+    eprintln!("buckle: fetching buck2 {version}");
     let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
     zstd::stream::copy_decode(resp, &tmp_buck2_bin).unwrap();
     tmp_buck2_bin.flush()?;
@@ -194,8 +200,27 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/prelude_hash"))?;
     let mut prelude_hash = File::create(prelude_path)?;
     prelude_hash.write_all(&resp.bytes()?)?;
+    prelude_hash.flush()?;
 
     Ok(dir_path)
+}
+
+fn get_expected_prelude_hash() -> &'static str {
+    static INSTANCE: OnceCell<String> = OnceCell::new();
+    let expected_hash = INSTANCE.get_or_init(|| {
+        let mut prelude_hash_path = get_buck2_dir().unwrap();
+        prelude_hash_path.push("prelude_hash");
+
+        let mut prelude_hash = File::open(prelude_hash_path).unwrap();
+        let mut buf = vec![];
+        prelude_hash.read_to_end(&mut buf).unwrap();
+        std::str::from_utf8(&buf)
+            .unwrap()
+            .to_string()
+            .trim()
+            .to_string()
+    });
+    expected_hash
 }
 
 fn read_buck2_version() -> Result<String, Error> {
@@ -203,17 +228,16 @@ fn read_buck2_version() -> Result<String, Error> {
         return Ok(version);
     }
 
-    if let Some(mut root) = find_project_root()? {
-        root.push(".buckversion");
-        if root.exists() {
-            return Ok(fs::read_to_string(root)?.trim().to_string());
-        }
+    let mut root = get_buck2_project_root().to_path_buf();
+    root.push(".buckversion");
+    if root.exists() {
+        return Ok(fs::read_to_string(root)?.trim().to_string());
     }
 
     Ok(String::from("latest"))
 }
 
-fn get_buck2_path() -> Result<PathBuf, Error> {
+fn get_buck2_dir() -> Result<PathBuf, Error> {
     let buckle_dir = get_buckle_dir()?;
     if !buckle_dir.exists() {
         fs::create_dir_all(&buckle_dir)?;
@@ -223,10 +247,46 @@ fn get_buck2_path() -> Result<PathBuf, Error> {
     download_http(buck2_version, &buckle_dir)
 }
 
+// Warn if the prelude does not match expected
+fn verify_prelude(absolute_prelude_path: &Path) {
+    // It's ok if it's not a git repo, but we don't have support
+    // for checking other methods yet. Do not throw an error.
+    if let Ok(repo) = git2::Repository::open_from_env() {
+        // It makes no sense for buck2 to be invoked on a bare git repo.
+        let git_workdir = repo.workdir().expect("buck2 is not for bare git repos");
+        let git_relative_prelude_path = absolute_prelude_path
+            .strip_prefix(git_workdir)
+            .expect("buck2 prelude is not in the same git repo")
+            .to_str()
+            .unwrap();
+        // If there is a prelude known
+        if let Ok(prelude) = repo.find_submodule(git_relative_prelude_path) {
+            // Don't check if there is no ID.
+            if let Some(prelude_hash) = prelude.workdir_id() {
+                let prelude_hash = prelude_hash.to_string();
+                let expected_hash = get_expected_prelude_hash();
+                if prelude_hash != expected_hash {
+                    mismatched_prelude_msg(absolute_prelude_path, &prelude_hash, expected_hash)
+                }
+            }
+        }
+    }
+}
+
+/// Notify user of prelude mismatch and suggest solution.
+// TODO make this much better
+fn mismatched_prelude_msg(absolute_prelude_path: &Path, prelude_hash: &str, expected_hash: &str) {
+    eprintln!(
+        "buckle: Git submodule for prelude ({prelude_hash}) is not the expected {expected_hash}."
+    );
+    let abs_path = absolute_prelude_path.display();
+    eprintln!("buckle: cd {abs_path} && git fetch && git checkout {expected_hash}");
+}
+
 fn main() -> Result<(), Error> {
-    let mut buck2_path = get_buck2_path()?;
-    #[cfg(debug_assertions)]
-    dbg!(&buck2_path);
+    let mut buck2_path = get_buck2_dir()?;
+    let mut buck2config = get_buck2_project_root().to_path_buf();
+    buck2config.push(".buckconfig");
     buck2_path.push("buck2");
 
     if !buck2_path.exists() {
@@ -247,6 +307,23 @@ fn main() -> Result<(), Error> {
                 "The buckle cache is corrupted. Suggested fix is to remove {}",
                 get_buckle_dir()?.display()
             ));
+        }
+    }
+
+    if env::var("BUCKLE_PRELUDE_CHECK")
+        .map(|var| var != "NO")
+        .unwrap_or(true)
+    {
+        // If we fail to parse the ini file, don't throw an error. We can't parse it for
+        // some reason, so we should fall back on buck2 to throw a better error.
+        if let Ok(ini) = Ini::load_from_file(buck2config) {
+            if let Some(repos) = ini.section(Some("repositories")) {
+                if let Some(prelude_path) = repos.get("prelude") {
+                    let mut absolute_prelude_path = get_buck2_project_root().to_path_buf();
+                    absolute_prelude_path.push(prelude_path);
+                    verify_prelude(&absolute_prelude_path);
+                }
+            }
         }
     }
 
