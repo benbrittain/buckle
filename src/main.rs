@@ -6,16 +6,14 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use std::{
-    io::Write,
-    time::SystemTime,
-};
+use std::{io::Write, time::SystemTime};
 use url::Url;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download/";
+const BUCK_RELEASE_URL: &str = "https://github.com/facebook/buck2/tags";
 
 fn get_buck2_dir() -> Result<PathBuf, Error> {
     let mut dir = match env::var("BUCKLE_HOME") {
@@ -129,33 +127,47 @@ fn get_arch() -> Result<&'static str, Error> {
 
 fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     let releases = get_releases(output_dir)?;
-    let mut path = output_dir.to_path_buf();
+    let mut buck2_path = output_dir.to_path_buf();
 
+    let mut release_found = false;
     for release in releases {
-        if release.tag_name == "latest" {
-            path.push(release.target_commitish);
-        } else {
-            return Err(anyhow!(
-                "Meta has changed their releasing method. Please update buckle."
-            ));
+        if release.tag_name == version {
+            buck2_path.push(release.target_commitish);
+            release_found = true;
         }
     }
-    path.push("buck2");
-    if path.exists() {
-        return Ok(path);
+    if !release_found {
+        return Err(anyhow!("{version} was not available. Please check '{BUCK_RELEASE_URL}' for available releases."));
     }
-    if let Some(prefix) = path.parent() {
+
+    // Path to directory that caches buck
+    let dir_path = buck2_path.clone();
+    if dir_path.exists() {
+        // Already downloaded
+        return Ok(dir_path);
+    }
+
+    buck2_path.push("buck2");
+    if let Some(prefix) = buck2_path.parent() {
         fs::create_dir_all(prefix)?;
     }
 
-    let buck2_bin = File::create(&path)?;
+    // Fetch the buck2 archive, decode it, make it executable
+    let buck2_bin = File::create(&buck2_path)?;
     let arch = get_arch()?;
     let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
     zstd::stream::copy_decode(resp, buck2_bin).unwrap();
     let permissions = fs::Permissions::from_mode(0o755);
-    fs::set_permissions(&path, permissions)?;
+    fs::set_permissions(&buck2_path, permissions)?;
 
-    Ok(path)
+    // Also fetch the prelude hash and store it
+    let mut prelude_path = dir_path.clone();
+    prelude_path.push("prelude_hash");
+    let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/prelude_hash"))?;
+    let mut prelude_hash = File::create(prelude_path)?;
+    prelude_hash.write_all(&resp.bytes()?)?;
+
+    Ok(dir_path)
 }
 
 fn read_buck2_version() -> Result<String, Error> {
@@ -180,20 +192,16 @@ fn get_buck2_path() -> Result<PathBuf, Error> {
     }
 
     let buck2_version = read_buck2_version()?;
-
-    // or any version, but that isn't supported yet
-    // TODO probably a regex here.
-    if buck2_version == "latest" {
-        Ok(download_http(buck2_version, &buck2_dir)?)
-    } else {
-        // TODO fetch from git.
-        todo!()
-    }
+    download_http(buck2_version, &buck2_dir)
 }
 
 fn main() -> Result<(), Error> {
-    let buck2_path = dbg!(get_buck2_path()?);
+    let mut buck2_path = get_buck2_path()?;
 
+    #[cfg(debug_assertions)]
+    dbg!(&buck2_path);
+
+    buck2_path.push("buck2");
     // Collect information indented for buck2 binary.
     let mut args = env::args_os();
     args.next(); // Skip buckle
