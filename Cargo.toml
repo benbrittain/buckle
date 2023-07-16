@@ -1,6 +1,6 @@
 [package]
 name = "buckle"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "A lightweight launcher for buck2"
 license = "MIT"
