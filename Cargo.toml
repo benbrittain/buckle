@@ -1,6 +1,6 @@
 [package]
 name = "buckle"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "A lightweight launcher for buck2"
 license = "MIT"
@@ -27,6 +27,8 @@ assert_cmd = "2.0.11"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+strip = true
+codegen-units = 1
 
 # Config for 'cargo dist'
 [workspace.metadata.dist]
