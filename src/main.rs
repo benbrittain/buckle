@@ -21,7 +21,7 @@ const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download";
 const BUCK_RELEASE_URL: &str = "https://github.com/facebook/buck2/tags";
 
 fn get_buckle_dir() -> Result<PathBuf, Error> {
-    let mut dir = match env::var("BUCKLE_HOME") {
+    let mut dir = match env::var("BUCKLE_CACHE") {
         Ok(home) => Ok(PathBuf::from(home)),
         Err(_) => match env::consts::OS {
             "linux" => {
@@ -32,7 +32,7 @@ fn get_buckle_dir() -> Result<PathBuf, Error> {
                     path.push(".cache");
                     Ok(path)
                 } else {
-                    Err(anyhow!("neither $XDG_CACHE_HOME nor $HOME are defined. Either define them or specify a $BUCKLE_HOME"))
+                    Err(anyhow!("neither $XDG_CACHE_HOME nor $HOME are defined. Either define them or specify a $BUCKLE_CACHE"))
                 }
             }
             "macos" => {
