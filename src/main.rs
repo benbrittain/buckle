@@ -56,8 +56,8 @@ fn get_buckle_dir() -> Result<PathBuf, Error> {
 }
 
 /// Find the furthest .buckconfig except if a .buckroot is found.
-fn get_buck2_project_root() -> &'static Path {
-    static INSTANCE: OnceCell<PathBuf> = OnceCell::new();
+fn get_buck2_project_root() -> Option<&'static Path> {
+    static INSTANCE: OnceCell<Option<PathBuf>> = OnceCell::new();
     let path = INSTANCE.get_or_init(|| {
         let path = env::current_dir().unwrap();
         let mut current_root = None;
@@ -66,7 +66,7 @@ fn get_buck2_project_root() -> &'static Path {
             br.push(".buckroot");
             if br.exists() {
                 // A buckroot means you should not check any higher in the file tree.
-                return ancestor.to_path_buf();
+                return Some(ancestor.to_path_buf());
             }
 
             let mut bc = ancestor.to_path_buf();
@@ -76,9 +76,9 @@ fn get_buck2_project_root() -> &'static Path {
                 current_root = Some(ancestor.to_path_buf());
             }
         }
-        current_root.expect("No .buckconfig present in directory hierarchy.")
+        current_root
     });
-    path
+    path.as_deref()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -228,10 +228,11 @@ fn read_buck2_version() -> Result<String, Error> {
         return Ok(version);
     }
 
-    let mut root = get_buck2_project_root().to_path_buf();
-    root.push(".buckversion");
-    if root.exists() {
-        return Ok(fs::read_to_string(root)?.trim().to_string());
+    if let Some(root) = get_buck2_project_root() {
+        let root: PathBuf = [root, Path::new(".buckversion")].iter().collect();
+        if root.exists() {
+            return Ok(fs::read_to_string(root)?.trim().to_string());
+        }
     }
 
     Ok(String::from("latest"))
@@ -248,25 +249,29 @@ fn get_buck2_dir() -> Result<PathBuf, Error> {
 }
 
 // Warn if the prelude does not match expected
-fn verify_prelude(absolute_prelude_path: &Path) {
-    // It's ok if it's not a git repo, but we don't have support
-    // for checking other methods yet. Do not throw an error.
-    if let Ok(repo) = git2::Repository::open_from_env() {
-        // It makes no sense for buck2 to be invoked on a bare git repo.
-        let git_workdir = repo.workdir().expect("buck2 is not for bare git repos");
-        let git_relative_prelude_path = absolute_prelude_path
-            .strip_prefix(git_workdir)
-            .expect("buck2 prelude is not in the same git repo")
-            .to_str()
-            .unwrap();
-        // If there is a prelude known
-        if let Ok(prelude) = repo.find_submodule(git_relative_prelude_path) {
-            // Don't check if there is no ID.
-            if let Some(prelude_hash) = prelude.workdir_id() {
-                let prelude_hash = prelude_hash.to_string();
-                let expected_hash = get_expected_prelude_hash();
-                if prelude_hash != expected_hash {
-                    mismatched_prelude_msg(absolute_prelude_path, &prelude_hash, expected_hash)
+fn verify_prelude(prelude_path: &str) {
+    if let Some(absolute_prelude_path) = get_buck2_project_root() {
+        let mut absolute_prelude_path = absolute_prelude_path.to_path_buf();
+        absolute_prelude_path.push(prelude_path);
+        // It's ok if it's not a git repo, but we don't have support
+        // for checking other methods yet. Do not throw an error.
+        if let Ok(repo) = git2::Repository::open_from_env() {
+            // It makes no sense for buck2 to be invoked on a bare git repo.
+            let git_workdir = repo.workdir().expect("buck2 is not for bare git repos");
+            let git_relative_prelude_path = absolute_prelude_path
+                .strip_prefix(git_workdir)
+                .expect("buck2 prelude is not in the same git repo")
+                .to_str()
+                .unwrap();
+            // If there is a prelude known
+            if let Ok(prelude) = repo.find_submodule(git_relative_prelude_path) {
+                // Don't check if there is no ID.
+                if let Some(prelude_hash) = prelude.workdir_id() {
+                    let prelude_hash = prelude_hash.to_string();
+                    let expected_hash = get_expected_prelude_hash();
+                    if prelude_hash != expected_hash {
+                        mismatched_prelude_msg(&absolute_prelude_path, &prelude_hash, expected_hash)
+                    }
                 }
             }
         }
@@ -284,11 +289,7 @@ fn mismatched_prelude_msg(absolute_prelude_path: &Path, prelude_hash: &str, expe
 }
 
 fn main() -> Result<(), Error> {
-    let mut buck2_path = get_buck2_dir()?;
-    let mut buck2config = get_buck2_project_root().to_path_buf();
-    buck2config.push(".buckconfig");
-    buck2_path.push("buck2");
-
+    let buck2_path: PathBuf = [get_buck2_dir()?, PathBuf::from("buck2")].iter().collect();
     if !buck2_path.exists() {
         return Err(anyhow!(
             "The buckle cache is corrupted. Suggested fix is to remove {}",
@@ -314,14 +315,16 @@ fn main() -> Result<(), Error> {
         .map(|var| var != "NO")
         .unwrap_or(true)
     {
-        // If we fail to parse the ini file, don't throw an error. We can't parse it for
-        // some reason, so we should fall back on buck2 to throw a better error.
-        if let Ok(ini) = Ini::load_from_file(buck2config) {
-            if let Some(repos) = ini.section(Some("repositories")) {
-                if let Some(prelude_path) = repos.get("prelude") {
-                    let mut absolute_prelude_path = get_buck2_project_root().to_path_buf();
-                    absolute_prelude_path.push(prelude_path);
-                    verify_prelude(&absolute_prelude_path);
+        // If we can't find the project root, just skip checking the prelude and call the buck2 binary
+        if let Some(root) = get_buck2_project_root() {
+            // If we fail to parse the ini file, don't throw an error. We can't parse it for
+            // some reason, so we should fall back on buck2 to throw a better error.
+            let buck2config: PathBuf = [root, Path::new(".buckconfig")].iter().collect();
+            if let Ok(ini) = Ini::load_from_file(buck2config) {
+                if let Some(repos) = ini.section(Some("repositories")) {
+                    if let Some(prelude_path) = repos.get("prelude") {
+                        verify_prelude(prelude_path);
+                    }
                 }
             }
         }
