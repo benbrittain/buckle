@@ -17,7 +17,6 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 use std::time::SystemTime;
 
-const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download";
 const BUCK_RELEASE_URL: &str = "https://github.com/facebook/buck2/tags";
 
 fn get_buckle_dir() -> Result<PathBuf, Error> {
@@ -83,6 +82,13 @@ fn get_buck2_project_root() -> Option<&'static Path> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct Asset {
+    pub name: String,
+    pub browser_download_url: Url,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct Release {
     pub url: Url,
     pub html_url: Url,
@@ -101,7 +107,7 @@ pub struct Release {
     pub created_at: Option<String>,
     pub published_at: Option<String>,
     pub author: serde_json::Value,
-    pub assets: Vec<serde_json::Value>,
+    pub assets: Vec<Asset>,
 }
 
 fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
@@ -156,16 +162,33 @@ fn get_arch() -> Result<&'static str, Error> {
 fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     let releases = get_releases(output_dir)?;
     let mut dir_path = output_dir.to_path_buf();
-    let mut release_found = false;
+
+    let mut unpackable = None;
+    let mut verbatim = vec![];
+    let arch = get_arch()?;
+
     for release in releases {
-        if release.tag_name == version {
-            dir_path.push(release.target_commitish);
-            release_found = true;
+        if release.name.as_ref() == Some(&version) {
+            if release.tag_name == version {
+                dir_path.push(release.target_commitish);
+            }
+            for asset in release.assets {
+                let name = asset.name;
+                let url = asset.browser_download_url;
+                if name == format!("buck2-{}.zst", arch) {
+                    unpackable = Some((name, url));
+                } else if name == "prelude" {
+                    verbatim.push((name, url));
+                }
+            }
         }
     }
-    if !release_found {
+
+    let (name, url) = if let Some(unpackable) = unpackable {
+        unpackable
+    } else {
         return Err(anyhow!("{version} was not available. Please check '{BUCK_RELEASE_URL}' for available releases."));
-    }
+    };
 
     let binary_path: PathBuf = [&dir_path, Path::new("buck2")].iter().collect();
     if binary_path.exists() {
@@ -176,21 +199,21 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     // Create the release directory if it doesn't exist
     fs::create_dir_all(&dir_path).with_context(|| anyhow!("problem creating {:?}", dir_path))?;
 
-    {
-        // Fetch the prelude hash and store it, do this before the binary so we don't see a partial hash
+    for (name, url) in verbatim {
+        // Fetch the verbatim items hash and store, do this before the binary so we don't see a partial hash
         // We do this as the complete executable is atomic via tmp_file rename
-        let prelude_path: PathBuf = [&dir_path, Path::new("prelude_hash")].iter().collect();
-        let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/prelude_hash"))?;
-        let mut prelude_hash = File::create(prelude_path)?;
-        prelude_hash.write_all(&resp.bytes()?)?;
-        prelude_hash.flush()?;
+        let verbatim_path: PathBuf = [&dir_path, Path::new(&name)].iter().collect();
+        let resp = reqwest::blocking::get(url)?;
+        let mut verbatim_file = File::create(&verbatim_path)
+            .with_context(|| anyhow!("problem creating {:?}", verbatim_path))?;
+        verbatim_file.write_all(&resp.bytes()?)?;
+        verbatim_file.flush()?;
     }
 
     // Fetch the buck2 archive, decode it, make it executable
     let mut tmp_file = NamedTempFile::new_in(&dir_path)?;
-    let arch = get_arch()?;
-    eprintln!("buckle: fetching buck2 {version}");
-    let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
+    eprintln!("buckle: fetching {name} {version}");
+    let resp = reqwest::blocking::get(url)?;
     zstd::stream::copy_decode(resp, &tmp_file)?;
     tmp_file.flush()?;
     #[cfg(unix)]
