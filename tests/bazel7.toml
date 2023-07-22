@@ -1,0 +1,10 @@
+#!/usr/bin/env -S BUCKLE_SCRIPT=1 BAZEL_BINARY=buck2 cargo run --
+[archives.bazel]
+source.github.owner = "bazelbuild"
+source.github.repo = "bazel"
+source.github.version = "7.0.0-pre.20230530.3"
+artifact_pattern = "bazel-%version%-%os%-%arch%"
+package_type = "single_file"
+
+[binaries.bazel]
+provided_by = "bazel"

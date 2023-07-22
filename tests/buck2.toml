@@ -1,0 +1,10 @@
+#!/usr/bin/env -S BUCKLE_SCRIPT=1 BAZEL_BINARY=buck2 cargo run --
+[archives.buck2]
+source.github.owner = "facebook"
+source.github.repo = "buck2"
+source.github.version = "latest"
+artifact_pattern = "buck2-%target%.zst"
+package_type = "zstd_single_file"
+
+[binaries.buck2]
+provided_by = "buck2"
