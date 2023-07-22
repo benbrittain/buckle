@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct GithubRelease {
     pub owner: String,
     pub repo: String,
+    /// Version string regex
     pub version: String,
 }
 

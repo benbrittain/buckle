@@ -14,8 +14,8 @@ fn test_bazel_fromenv() {
     [archives.bazel]
     source.github.owner = "bazelbuild"
     source.github.repo = "bazel"
-    source.github.version = "7.0.0-pre.20230530.3"
-    artifact_pattern = "bazel-%version%-%os%-%arch%"
+    source.github.version = "^7.0.0-pre\\.[0-9.]+$"
+    artifact_pattern = "^bazel-%version%-%os%-%arch%$"
     package_type = "single_file"
 
     [binaries.bazel]
