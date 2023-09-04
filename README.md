@@ -13,7 +13,7 @@ There are multiple ways to install the `buckle` binary.
 There are prebuilts available for Linux, Windows, and MacOS hosted on [GitHub](https://github.com/benbrittain/buckle/releases).
 
 ```
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/benbrittain/buckle/releases/download/v0.2.1/buckle-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/benbrittain/buckle/releases/download/v0.2.2/buckle-installer.sh | sh
 ```
 
 ### Building from source
