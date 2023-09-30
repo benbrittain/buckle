@@ -1,6 +1,6 @@
 [package]
 name = "buckle"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "A lightweight launcher for buck2"
 license = "MIT"
@@ -41,4 +41,4 @@ ci = ["github"]
 # The installers to generate for each app
 installers = ["shell"]
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+targets = ["x86_64-unknown-linux-musl", "x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
