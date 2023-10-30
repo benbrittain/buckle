@@ -312,7 +312,7 @@ fn main() -> Result<(), Error> {
     }
 
     if env::var("BUCKLE_PRELUDE_CHECK")
-        .map(|var| var != "NO")
+        .map(|var| var.to_uppercase() != "NO")
         .unwrap_or(true)
     {
         // If we can't find the project root, just skip checking the prelude and call the buck2 binary
