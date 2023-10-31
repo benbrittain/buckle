@@ -185,7 +185,7 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     let arch = get_arch()?;
     eprintln!("buckle: fetching buck2 {version}");
     let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
-    zstd::stream::copy_decode(resp, &tmp_buck2_bin).unwrap();
+    zstd::stream::copy_decode(resp, &tmp_buck2_bin)?;
     tmp_buck2_bin.flush()?;
     #[cfg(unix)]
     {
@@ -249,20 +249,29 @@ fn get_buck2_dir() -> Result<PathBuf, Error> {
 }
 
 // Warn if the prelude does not match expected
-fn verify_prelude(prelude_path: &str) {
-    if let Some(absolute_prelude_path) = get_buck2_project_root() {
-        let mut absolute_prelude_path = absolute_prelude_path.to_path_buf();
+fn verify_prelude(prelude_path: &str) -> Result<(), Error> {
+    if let Some(project_root) = get_buck2_project_root() {
+        let mut absolute_prelude_path = project_root.to_path_buf();
         absolute_prelude_path.push(prelude_path);
         // It's ok if it's not a git repo, but we don't have support
         // for checking other methods yet. Do not throw an error.
         if let Ok(repo) = git2::Repository::open_from_env() {
             // It makes no sense for buck2 to be invoked on a bare git repo.
-            let git_workdir = repo.workdir().expect("buck2 is not for bare git repos");
+            let git_workdir = repo
+                .workdir()
+                .ok_or(anyhow!("buck2 is not for bare git repos"))?;
             let git_relative_prelude_path = absolute_prelude_path
                 .strip_prefix(git_workdir)
-                .expect("buck2 prelude is not in the same git repo")
+                .map_err(|_err| {
+                    anyhow!(
+                        "{}/.buckconfig indicates the prelude should be \
+                        located at {} which is not within this git repo.",
+                        project_root.display(),
+                        absolute_prelude_path.display(),
+                    )
+                })?
                 .to_str()
-                .unwrap();
+                .ok_or(anyhow!("Could not convert the prelude path to a string"))?;
             // If there is a prelude known
             if let Ok(prelude) = repo.find_submodule(git_relative_prelude_path) {
                 // Don't check if there is no ID.
@@ -276,6 +285,7 @@ fn verify_prelude(prelude_path: &str) {
             }
         }
     }
+    Ok(())
 }
 
 /// Notify user of prelude mismatch and suggest solution.
@@ -323,7 +333,7 @@ fn main() -> Result<(), Error> {
             if let Ok(ini) = Ini::load_from_file(buck2config) {
                 if let Some(repos) = ini.section(Some("repositories")) {
                     if let Some(prelude_path) = repos.get("prelude") {
-                        verify_prelude(prelude_path);
+                        verify_prelude(prelude_path)?;
                     }
                 }
             }
