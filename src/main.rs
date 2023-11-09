@@ -139,7 +139,7 @@ fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
 fn get_arch() -> Result<&'static str, Error> {
     Ok(match env::consts::ARCH {
         "x86_64" => match env::consts::OS {
-            "linux" => "x86_64-unknown-linux-gnu",
+            "linux" => "x86_64-unknown-linux-musl",
             "darwin" | "macos" => "x86_64-apple-darwin",
             "windows" => "x86_64-pc-windows-msvc",
             unknown => return Err(anyhow!("Unsupported Arch/OS: x86_64/{unknown}")),
