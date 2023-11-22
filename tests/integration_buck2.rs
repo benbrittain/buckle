@@ -8,7 +8,14 @@ fn test_buck2_latest() {
     cmd.arg("--version");
     let assert = cmd.assert();
     let stdout = String::from_utf8(assert.get_output().stdout.to_vec()).unwrap();
-    assert!(stdout.starts_with("buck2 "), "found {}", stdout);
+    let stderr = String::from_utf8(assert.get_output().stderr.to_vec()).unwrap();
+
+    assert!(
+        stdout.starts_with("buck2 "),
+        "found {} on stdout. stderr was {}",
+        stdout,
+        stderr
+    );
     assert.success();
 }
 
@@ -22,6 +29,12 @@ fn test_buck2_specific_version() {
     // TODO verify the right version is download after buck2 properly states it's version
     let assert = cmd.assert();
     let stdout = String::from_utf8(assert.get_output().stdout.to_vec()).unwrap();
-    assert!(stdout.starts_with("buck2 "), "found {}", stdout);
+    let stderr = String::from_utf8(assert.get_output().stderr.to_vec()).unwrap();
+    assert!(
+        stdout.starts_with("buck2 "),
+        "found {} on stdout. stderr was {}",
+        stdout,
+        stderr
+    );
     assert.success();
 }

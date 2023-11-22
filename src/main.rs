@@ -141,7 +141,7 @@ fn get_arch() -> Result<&'static str, Error> {
         "x86_64" => match env::consts::OS {
             "linux" => "x86_64-unknown-linux-musl",
             "darwin" | "macos" => "x86_64-apple-darwin",
-            "windows" => "x86_64-pc-windows-msvc",
+            "windows" => "x86_64-pc-windows-msvc.exe",
             unknown => return Err(anyhow!("Unsupported Arch/OS: x86_64/{unknown}")),
         },
         "aarch64" => match env::consts::OS {
