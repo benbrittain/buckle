@@ -117,7 +117,7 @@ fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
         let curr_time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
             .as_secs() as i64;
-        if (curr_time - last_modification_time).abs() < 60 * 60 {
+        if (curr_time - last_modification_time).abs() < 4 * 60 * 60 {
             let buf = fs::read_to_string(releases_json_path)?;
             return Ok(serde_json::from_str(&buf)?);
         }
@@ -129,11 +129,20 @@ fn get_releases(path: &Path) -> Result<Vec<Release>, Error> {
     let releases = client
         .get("http://api.github.com/repos/facebook/buck2/releases")
         .send()?;
-    let text = releases.text_with_charset("utf-8")?;
-    let mut file = File::create(releases_json_path)?;
-    file.write_all(text.as_bytes())?;
-    file.flush()?;
-    Ok(serde_json::from_str(&text)?)
+
+    if releases.status().is_success() {
+        let text = releases.text_with_charset("utf-8")?;
+        let mut file = File::create(releases_json_path)?;
+        file.write_all(text.as_bytes())?;
+        file.flush()?;
+        Ok(serde_json::from_str(&text)?)
+    } else if releases_json_path.exists() {
+        // maybe out of date, but not that bad
+        let buf = fs::read_to_string(releases_json_path)?;
+        Ok(serde_json::from_str(&buf)?)
+    } else {
+        Err(anyhow!("No releases.json"))
+    }
 }
 
 fn get_arch() -> Result<&'static str, Error> {
