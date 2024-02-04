@@ -1,0 +1,29 @@
+name: Buckle Windows CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+          components: rustfmt, clippy
+      - name: Build
+        run: cargo build
+      - name: Test
+        run: cargo test
+      - name: Lint
+        run: cargo clippy
