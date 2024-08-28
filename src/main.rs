@@ -17,7 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 use std::time::SystemTime;
 
-const BASE_URL: &str = "https://github.com/facebook/buck2/releases/download";
+const UPSTREAM_BASE_URL: &str = "https://github.com/facebook/buck2/releases/download";
 const BUCK_RELEASE_URL: &str = "https://github.com/facebook/buck2/tags";
 
 fn get_buckle_dir() -> Result<PathBuf, Error> {
@@ -189,11 +189,17 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
         fs::create_dir_all(prefix)?;
     }
 
+    let base_url = env::var("BUCKLE_DOWNLOAD_URL");
+    let base_url = base_url
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or(UPSTREAM_BASE_URL);
+
     // Fetch the buck2 archive, decode it, make it executable
     let mut tmp_buck2_bin = NamedTempFile::new_in(dir_path.clone())?;
     let arch = get_arch()?;
     eprintln!("buckle: fetching buck2 {version}");
-    let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/buck2-{arch}.zst"))?;
+    let resp = reqwest::blocking::get(format!("{base_url}/{version}/buck2-{arch}.zst"))?;
     zstd::stream::copy_decode(resp, &tmp_buck2_bin)?;
     tmp_buck2_bin.flush()?;
     #[cfg(unix)]
@@ -206,7 +212,7 @@ fn download_http(version: String, output_dir: &Path) -> Result<PathBuf, Error> {
     // Also fetch the prelude hash and store it
     let mut prelude_path = dir_path.clone();
     prelude_path.push("prelude_hash");
-    let resp = reqwest::blocking::get(format!("{BASE_URL}/{version}/prelude_hash"))?;
+    let resp = reqwest::blocking::get(format!("{base_url}/{version}/prelude_hash"))?;
     let mut prelude_hash = File::create(prelude_path)?;
     prelude_hash.write_all(&resp.bytes()?)?;
     prelude_hash.flush()?;
