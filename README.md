@@ -35,47 +35,32 @@ By default, all of the above installation methods install the binary as `buckle`
 
 ```bash
 alias buck2='buckle'
-
 ```
 
 This will prevent you from accidently using the incorrect Buck2 version.
 
+### Configuration
 
-### Specifying a Buck2 version
-A `.buckversion` file is what allows you to pin your buck2 installation for all downstream users. Put it in the root of the Buck2 project.
+Buckle reads a `.buckleconfig.toml` at the root of your project. You can set the following options, which are all optional:
 
+```toml
+# `latest` or the release date in format YYYY-MM-DDD. See https://github.com/facebook/buck2/releases.
+# Can be overridden by setting the `USE_BUCK2_VERSION` environment variable.
+buck2_version = 2024-09-02
 
-`latest` or the release date in format YYYY-MM-DDD. [buck2 releases](https://github.com/facebook/buck2/releases)
+# Alternate download url. Given a `base_download_url`, `{base_download_url}/{version}/buck2-{arch}.zst` and `{base_download_url}/{version}/prelude_hash` should exist and serve the same contents as the upstream GitHub releases.
+# Note that Buckle will still query GitHub to get a list of releases.
+base_download_url = https://my.buck2.mirror/
 
-Example `.buckversion`:
-```
-2023-07-15
-```
+# Whether or not Buckle should validate that the prelude hash matches the version of Buck2 that is specified.
+# There are reasonable scenarios where someone actively working on the build system might be carrying a patch on the standard prelude.
+# Can be overridden by setting the `BUCKLE_PRELUDE_CHECK` environment variable to `NO`.
+check_prelude = false
 
-`buckle` supports an environment variable that can override the `.buckversion` file.
-```bash
-USE_BUCK2_VERSION=latest buckle //...
-```
-
-### Prelude check
-When upgraded, `buck2` will likely not be syncronized with the standard prelude anymore. Buckle will notify in this scenario what prelude is expected and how to upgrade.
-
-There are reasonable scenarios where someone actively working on the build system might be carrying a patch on the standard `buck2` prelude. To disable the Buckle warnings of the mismatch:
-
-```bash
-export BUCKLE_PRELUDE_CHECK=NO
-```
-### Changing the installation directory
-Buckle stores the `buck2` binary in a different place dependent on the OS.
-
-Linux: `$XDG_CACHE_HOME/buckle` or `$HOME/.cache/buckle`
-
-MacOS: `$HOME/Library/Caches/buckle`
-
-Windows `%LocalAppData%/buckle`
-
-
-you may also specify an override with the `BUCKLE_CACHE` environment variable.
-```bash
-export BUCKLE_CACHE=/tmp
+# By default, Buckle stores the `buck2` binary in a different place dependent on the OS.
+# Linux: `$XDG_CACHE_HOME/buckle` or `$HOME/.cache/buckle`
+# MacOS: `$HOME/Library/Caches/buckle`
+# Windows `%LocalAppData%/buckle`
+# Can be overridden by setting the `BUCKLE_CACHE` environment variable.
+buckle_dir = /my/cache/dir/
 ```
