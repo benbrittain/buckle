@@ -128,19 +128,25 @@ fn get_arch() -> Result<&'static str, Error> {
 }
 
 fn download_http(config: &BuckleConfig, output_dir: &Path) -> Result<PathBuf, Error> {
-    let releases = get_releases(output_dir)?;
     let mut buck2_path = output_dir.to_path_buf();
-
     let version = &config.buck2_version;
-    let mut release_found = false;
-    for release in releases {
-        if release.tag_name == *version {
-            buck2_path.push(release.target_commitish);
-            release_found = true;
+
+    if config.buck2_version == "latest" {
+        // We need to put "latest" releases in a unique directory as they will point to a different
+        // commit over time: get the current latest release commit from the releases page.
+        let releases = get_releases(output_dir)?;
+        let mut release_found = false;
+        for release in releases {
+            if release.tag_name == *version {
+                buck2_path.push(release.target_commitish);
+                release_found = true;
+            }
         }
-    }
-    if !release_found {
-        return Err(anyhow!("{version} was not available. Please check '{BUCK_RELEASE_URL}' for available releases."));
+        if !release_found {
+            return Err(anyhow!("{version} was not available. Please check '{BUCK_RELEASE_URL}' for available releases."));
+        }
+    } else {
+        buck2_path.push(version);
     }
 
     // Path to directory that caches buck
@@ -206,7 +212,12 @@ fn get_buck2_dir(config: &BuckleConfig) -> Result<PathBuf, Error> {
         fs::create_dir_all(buckle_dir)?;
     }
 
-    download_http(config, buckle_dir)
+    download_http(config, buckle_dir).map_err(|e| {
+        anyhow!(
+            "Failed to download release {} ({e}). Please check that this release exists at '{BUCK_RELEASE_URL}'.",
+            config.buck2_version,
+        )
+    })
 }
 
 // Warn if the prelude does not match expected

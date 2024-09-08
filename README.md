@@ -49,8 +49,8 @@ Buckle reads a `.buckleconfig.toml` at the root of your project. You can set the
 buck2_version = 2024-09-02
 
 # Alternate download url. Given a `base_download_url`, `{base_download_url}/{version}/buck2-{arch}.zst` and `{base_download_url}/{version}/prelude_hash` should exist and serve the same contents as the upstream GitHub releases.
-# Note that Buckle will still query GitHub to get a list of releases.
-base_download_url = https://my.buck2.mirror/
+# Note that Buckle will still query GitHub to get the latest release when `buck2_version` is `latest`.
+base_download_url = "https://my.buck2.mirror/"
 
 # Whether or not Buckle should validate that the prelude hash matches the version of Buck2 that is specified.
 # There are reasonable scenarios where someone actively working on the build system might be carrying a patch on the standard prelude.
@@ -62,5 +62,5 @@ check_prelude = false
 # MacOS: `$HOME/Library/Caches/buckle`
 # Windows `%LocalAppData%/buckle`
 # Can be overridden by setting the `BUCKLE_CACHE` environment variable.
-buckle_dir = /my/cache/dir/
+buckle_dir = "/my/cache/dir/"
 ```
