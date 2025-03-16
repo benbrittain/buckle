@@ -2,7 +2,8 @@ use anyhow::{anyhow, Error};
 use ini::Ini;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use sha2::{Digest, Sha256};
+use std::io::{Cursor, Read, Write};
 use std::{
     env,
     fs::{self, File},
@@ -167,8 +168,22 @@ fn download_http(config: &BuckleConfig, output_dir: &Path) -> Result<PathBuf, Er
     let mut tmp_buck2_bin = NamedTempFile::new_in(dir_path.clone())?;
     let arch = get_arch()?;
     eprintln!("buckle: fetching buck2 {version}");
-    let resp = reqwest::blocking::get(format!("{base_url}/{version}/buck2-{arch}.zst"))?;
-    zstd::stream::copy_decode(resp, &tmp_buck2_bin)?;
+    let mut resp = reqwest::blocking::get(format!("{base_url}/{version}/buck2-{arch}.zst"))?;
+    let mut buffer = Vec::new();
+    resp.read_to_end(&mut buffer)?;
+
+    if let Some(expected_hash) = &config.sha256 {
+        let mut hasher = Sha256::new();
+        hasher.update(&buffer);
+        let hash_result = format!("{:x}", hasher.finalize());
+        if hash_result != *expected_hash {
+            return Err(anyhow!(
+                "Tarball hash mismatch expected: `{expected_hash}` vs actual: `{hash_result}`"
+            ));
+        }
+    }
+
+    zstd::stream::copy_decode(Cursor::new(buffer), &tmp_buck2_bin)?;
     tmp_buck2_bin.flush()?;
     #[cfg(unix)]
     {
@@ -276,6 +291,7 @@ struct BuckleConfig {
     base_download_url: String,
     check_prelude: bool,
     buckle_dir: PathBuf,
+    sha256: Option<String>,
 }
 
 fn read_config() -> Result<BuckleConfig, Error> {
@@ -285,6 +301,7 @@ fn read_config() -> Result<BuckleConfig, Error> {
         base_download_url: Option<String>,
         check_prelude: Option<bool>,
         cache_dir: Option<PathBuf>,
+        sha256: Option<String>,
     }
 
     let file_config = (|| -> Result<BuckleFileConfig, Error> {
@@ -327,10 +344,8 @@ fn read_config() -> Result<BuckleConfig, Error> {
     let check_prelude =
         if let Ok(check) = env::var("BUCKLE_PRELUDE_CHECK").map(|var| var.to_uppercase() != "NO") {
             check
-        } else if let Some(check) = file_config.check_prelude {
-            check
         } else {
-            true
+            file_config.check_prelude.unwrap_or(true)
         };
 
     fn get_os_cache_dir() -> Result<PathBuf, Error> {
@@ -377,6 +392,7 @@ fn read_config() -> Result<BuckleConfig, Error> {
         base_download_url,
         check_prelude,
         buckle_dir,
+        sha256: file_config.sha256,
     })
 }
 

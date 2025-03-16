@@ -1,3 +1,5 @@
+use std::path::Path;
+
 #[cfg(test)]
 use assert_cmd::Command;
 
@@ -23,5 +25,19 @@ fn test_buck2_specific_version() {
     let assert = cmd.assert();
     let stdout = String::from_utf8(assert.get_output().stdout.to_vec()).unwrap();
     assert!(stdout.starts_with("buck2 "), "found {}", stdout);
+    assert.success();
+}
+
+/// Integration test for basic buckleconfig params
+#[test]
+fn test_config() {
+    let mut cmd = Command::cargo_bin("buckle").unwrap();
+    cmd.arg("--version");
+    // Change the directory to `tests` which contains our config
+    cmd.current_dir(Path::new("tests"));
+
+    let assert = cmd.assert();
+    let stdout = String::from_utf8(assert.get_output().stdout.to_vec()).unwrap();
+    assert!(stdout.contains("buck2 "), "found {}", stdout);
     assert.success();
 }

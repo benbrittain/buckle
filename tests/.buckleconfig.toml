@@ -1,0 +1,5 @@
+buck2_version = 2025-03-15
+base_download_url = "https://github.com/facebook/buck2/releases/download"
+check_prelude = true
+# Can't add this in the test as its platform specific, the below works fine on macos locally
+# sha256 = "fde26e31d44a24b0934f69ba11451cc069c470ca7d21913eab1c4b2e7d435010"
